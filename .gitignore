@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+backend/.env
+.DS_Store
+backend/uploads/
+backend/reports/generated/
+backend/src/data/db.json
+frontend/.env
+__pycache__/
+*.pyc
