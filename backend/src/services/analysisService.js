@@ -1,5 +1,6 @@
 import path from "path";
 import { spawn } from "child_process";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import axios from "axios";
 
@@ -129,22 +130,20 @@ export async function analyzePitchDeck({ filePath, originalName, env }) {
 }
 
 async function extractDeck(filePath) {
-  const extension = path.extname(filePath).toLowerCase();
   const pythonScript = path.resolve(__dirname, "../../../python-worker/extract_pitch_deck.py");
-
-  if (extension === ".ppt") {
-    return {
-      slideCount: 0,
-      slides: [],
-      fullText: "",
-      warnings: ["Legacy .ppt conversion hook not configured. Install LibreOffice for automatic conversion in production."]
-    };
-  }
+  const pythonCommand = resolvePythonCommand();
+  const pythonArgs = pythonCommand.type === "launcher"
+    ? [...pythonCommand.args, pythonScript, filePath]
+    : [pythonScript, filePath];
 
   return new Promise((resolve, reject) => {
-    const pythonProcess = spawn("python", [pythonScript, filePath], { stdio: ["ignore", "pipe", "pipe"] });
+    const pythonProcess = spawn(pythonCommand.command, pythonArgs, { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
+
+    pythonProcess.on("error", (error) => {
+      reject(new Error(`Failed to start Python worker using ${pythonCommand.label}. ${error.message}`));
+    });
 
     pythonProcess.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
@@ -167,6 +166,25 @@ async function extractDeck(filePath) {
       }
     });
   });
+}
+
+function resolvePythonCommand() {
+  const venvPython = path.resolve(__dirname, "../../../.venv/Scripts/python.exe");
+  if (fs.existsSync(venvPython)) {
+    return {
+      command: venvPython,
+      args: [],
+      label: venvPython,
+      type: "direct"
+    };
+  }
+
+  return {
+    command: "python",
+    args: [],
+    label: "python",
+    type: "direct"
+  };
 }
 
 async function analyzeWithLlm({ env, startupName, extraction, retryCount = 1, lastValidationError = null }) {
@@ -220,11 +238,11 @@ export function buildLlmPrompt({ startupName, extraction, categories, retryCount
       : text;
   }
 
-  // Safe extraction
+  // ✅ Safe extraction
   const safeExtraction = extraction || {};
   const trimmedText = smartTrim(safeExtraction.fullText || "");
 
-  // Safe categories
+  // ✅ Safe categories
   const safeCategories = Array.isArray(categories) ? categories : [];
 
   const categoryConfig = safeCategories.map((c) => ({
@@ -234,7 +252,7 @@ export function buildLlmPrompt({ startupName, extraction, categories, retryCount
     criteria: c?.criteria || ""
   }));
 
-  // Safe slide types
+  // ✅ Safe slide types
   const safeSlideTypes = Array.isArray(safeExtraction.detectedSlideTypes)
     ? safeExtraction.detectedSlideTypes
     : [];
@@ -249,7 +267,7 @@ export function buildLlmPrompt({ startupName, extraction, categories, retryCount
     ? `RETRY CORRECTION: The previous response was invalid. Fix this exact issue: ${lastValidationError.message}`
     : "";
 
-  // Evaluation framework
+  // ✅ Evaluation framework
   const evaluationCriteria = `
 EVALUATION FRAMEWORK (STRICTLY FOLLOW):
 

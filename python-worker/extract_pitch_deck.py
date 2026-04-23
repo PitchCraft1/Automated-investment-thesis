@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -38,8 +39,55 @@ def detect_slide_types(text):
     return detected
 
 
+def candidate_executable_paths(names, windows_paths=None):
+    candidates = []
+    for name in names:
+        resolved = shutil.which(name)
+        if resolved:
+            candidates.append(resolved)
+
+    if platform.system() == "Windows" and windows_paths:
+        for candidate in windows_paths:
+            expanded = os.path.expandvars(candidate)
+            if os.path.exists(expanded):
+                candidates.append(expanded)
+
+    return candidates
+
+
+def first_available_executable(names, windows_paths=None):
+    candidates = candidate_executable_paths(names, windows_paths)
+    return candidates[0] if candidates else None
+
+
+def configure_tesseract():
+    if pytesseract is None:
+        return
+
+    tesseract_cmd = first_available_executable(
+        ["tesseract"],
+        windows_paths=[
+            r"%ProgramFiles%\Tesseract-OCR\tesseract.exe",
+            r"%LocalAppData%\Programs\Tesseract-OCR\tesseract.exe",
+        ],
+    )
+    if tesseract_cmd:
+        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+
+
+configure_tesseract()
+
+
 def convert_ppt_to_pptx(file_path):
-    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    soffice = first_available_executable(
+        ["soffice", "libreoffice"],
+        windows_paths=[
+            r"%ProgramFiles%\LibreOffice\program\soffice.exe",
+            r"%ProgramFiles%\LibreOffice\program\soffice.com",
+            r"%ProgramFiles(x86)%\LibreOffice\program\soffice.exe",
+            r"%ProgramFiles(x86)%\LibreOffice\program\soffice.com",
+        ],
+    )
     if not soffice:
         raise RuntimeError("LibreOffice is required for .ppt conversion but was not found in PATH.")
 
